@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>晨讀巡堂紀錄系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #2c3e50;
@@ -190,6 +191,21 @@
         }
         .btn-save:hover { background: #2980b9; }
         
+        .btn-export {
+            display: block;
+            width: 100%;
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 30px;
+        }
+        .btn-export:hover { background: #219653; }
+
         /* 底部統計表 */
         .summary-section { overflow-x: auto; }
         table {
@@ -323,34 +339,10 @@
         </div>
     </div>
 
-    <style>
-        @media (max-width: 768px) {
-            .seating-grid {
-                grid-template-columns: repeat(3, 1fr); /* Break into 3 columns on smaller screens */
-            }
-            .classroom-wrapper {
-                padding: 10px 40px 10px 10px;
-            }
-            .door {
-                width: 25px;
-                height: 50px;
-                font-size: 10px;
-            }
-            .seat {
-                padding: 2px;
-            }
-            .seat-select {
-                font-size: 10px;
-            }
-        }
-        @media (max-width: 480px) {
-            .seating-grid {
-                grid-template-columns: repeat(2, 1fr); /* 2 columns for phones */
-            }
-        }
-    </style>
-
-    <button class="btn-save" onclick="saveRecord()">儲存 / 更新本班紀錄</button>
+    <div style="display: flex; gap: 15px;">
+        <button class="btn-save" onclick="saveRecord()">儲存 / 更新本班紀錄</button>
+        <button class="btn-export" onclick="exportToExcel()">匯出本週紀錄至 Excel</button>
+    </div>
 
     <!-- 底部週次統計表 -->
     <div class="summary-section">
@@ -600,6 +592,74 @@
         document.getElementById("excStand").value = 0;
         document.getElementById("excNotReady").value = 0;
         document.getElementById("excOther").value = "";
+    }
+
+    function exportToExcel() {
+        const week = document.getElementById("weekInput").value;
+        const weekData = records[week];
+
+        if (!weekData || Object.keys(weekData).length === 0) {
+            alert(`第 ${week} 週尚無任何巡堂紀錄，無法匯出！`);
+            return;
+        }
+
+        // 準備 Excel 欄位標頭
+        const exportData = [];
+        const headers = [
+            "班級", 
+            "通過認證", 
+            "安靜閱讀", 
+            "閱讀課外讀物", 
+            "走動人數", 
+            "打掃人數", 
+            "站立人數", 
+            "未就緒人數", 
+            "其他狀況"
+        ];
+        
+        // 加入座位的標頭 (排-列)
+        for (let row = 1; row <= 5; row++) {
+            for (let visualCol = 1; visualCol <= 6; visualCol++) {
+                const logicalCol = 7 - visualCol; 
+                headers.push(`座位 ${logicalCol}-${row}`);
+            }
+        }
+        exportData.push(headers);
+
+        // 將每個班級的資料轉為陣列放入 exportData
+        // 依照班級順序輸出
+        classes.forEach(cls => {
+            if (weekData[cls]) {
+                const data = weekData[cls];
+                const rowData = [
+                    cls,
+                    data.passed ? "是" : "否",
+                    data.chkQuiet ? "是" : "否",
+                    data.chkBooks ? "是" : "否",
+                    data.excWalk,
+                    data.excClean,
+                    data.excStand,
+                    data.excNotReady,
+                    data.excOther || ""
+                ];
+
+                // 將座位資料加入列中
+                data.seats.forEach(seatStatus => {
+                    rowData.push(seatStatus);
+                });
+
+                exportData.push(rowData);
+            }
+        });
+
+        // 建立工作表與活頁簿
+        const ws = XLSX.utils.aoa_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, `第${week}週紀錄`);
+
+        // 下載檔案
+        const filename = `晨讀巡堂紀錄_第${week}週.xlsx`;
+        XLSX.writeFile(wb, filename);
     }
 </script>
 
