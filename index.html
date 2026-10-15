@@ -2,8 +2,8 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>晨讀巡堂紀錄系統</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>晨讀巡堂紀錄系統 (雲端同步版)</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root {
@@ -88,11 +88,11 @@
             100% { transform: scale(1); opacity: 1; }
         }
         
-        /* 教室與座位表設計 (縮小版) */
+        /* 教室與座位表設計 */
         .classroom-wrapper {
             position: relative;
             margin: 30px 0;
-            padding: 20px 60px 20px 20px; /* 右側留 60px 給門 */
+            padding: 20px 60px 20px 20px; 
             border: 2px solid var(--border);
             border-radius: 8px;
             background: #f8f9fa;
@@ -102,7 +102,7 @@
             right: 0;
             width: 35px;
             height: 70px;
-            background: #d35400; /* 木門顏色 */
+            background: #d35400; 
             color: white;
             display: flex;
             align-items: center;
@@ -132,7 +132,7 @@
         .seating-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
-            gap: 6px; /* 緊湊間距 */
+            gap: 6px; 
         }
         .seat {
             border: 1px solid #adb5bd;
@@ -152,7 +152,7 @@
         }
         .seat-label {
             font-size: 12px;
-            color: #d35400; /* 紅字標示 */
+            color: #d35400; 
             font-weight: bold;
         }
         .seat-select {
@@ -190,6 +190,7 @@
             margin-bottom: 30px;
         }
         .btn-save:hover { background: #2980b9; }
+        .btn-save:disabled { background: #95a5a6; cursor: not-allowed; }
         
         .btn-export {
             display: block;
@@ -243,17 +244,37 @@
             transform: translateX(-50%);
             background: #2ecc71;
             color: white;
-            padding: 10px 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 9999;
+            padding: 15px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 10000;
             display: none;
             font-weight: bold;
+            font-size: 1.2rem;
             animation: popIn 0.3s ease-out;
+            white-space: nowrap;
         }
+
+        /* 載入遮罩 */
+        #loadingOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9); z-index: 9999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .spinner {
+            border: 8px solid #f3f3f3; border-top: 8px solid var(--accent);
+            border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+
+<!-- 載入中畫面 -->
+<div id="loadingOverlay">
+    <div class="spinner"></div>
+    <h2 style="color: #2c3e50;">正在從雲端載入全校紀錄...</h2>
+</div>
 
 <div id="toast">儲存成功！</div>
 
@@ -335,12 +356,12 @@
         </div>
         <div class="exception-item" style="grid-column: span 2;">
             <label>其他</label>
-            <input type="text" id="excOther"> <!-- 已移除 placeholder -->
+            <input type="text" id="excOther">
         </div>
     </div>
 
     <div style="display: flex; gap: 15px;">
-        <button class="btn-save" onclick="saveRecord()">儲存 / 更新本班紀錄</button>
+        <button class="btn-save" id="btnSave" onclick="saveRecord()">儲存 / 雲端同步本班紀錄</button>
         <button class="btn-export" onclick="exportToExcel()">匯出本週紀錄至 Excel</button>
     </div>
 
@@ -382,7 +403,6 @@
         "901","902","903","904","905","906","907"
     ];
 
-    // 下拉選項與對應背景顏色
     const seatOptions = [
         { value: "正常", label: "正常", bg: "#ffffff" },
         { value: "看課內", label: "看課內", bg: "#ffeaa7" },
@@ -392,13 +412,30 @@
         { value: "桌上無書發呆", label: "桌上無書發呆", bg: "#ff7675" }
     ];
 
-    // 儲存所有紀錄的記憶體物件
-    const records = {};
+    let records = {};
 
-    window.onload = () => {
+    window.onload = async () => {
         initSeatingGrid();
         initSummaryTable();
+        // 進入網頁時，自動從 Google 試算表拉取歷史資料
+        await fetchAllDataFromCloud();
     };
+
+    // --- 雲端資料獲取 ---
+    async function fetchAllDataFromCloud() {
+        try {
+            const response = await fetch(GAS_URL);
+            const data = await response.json();
+            records = data; // 將雲端資料存入本地記憶體
+            refreshSummaryTableDisplay();
+            loadClassRecord(); // 嘗試載入當前下拉選單指向的週次/班級畫面
+        } catch (error) {
+            console.error("讀取資料失敗", error);
+            showToast("載入雲端資料失敗，將以離線模式繼續。請檢查網路！", "#e74c3c");
+        } finally {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+    }
 
     function toggleManualInspector() {
         const select = document.getElementById("inspectorSelect");
@@ -418,31 +455,25 @@
         badge.style.display = (chkQuiet && chkBooks) ? "inline-block" : "none";
     }
 
-    // 建立 6x5 下拉式座位表 (右到左，前到後)
     function initSeatingGrid() {
         const grid = document.getElementById("seatingGrid");
         grid.innerHTML = "";
         
-        // 直排為 1~5 (前到後)
         for (let row = 1; row <= 5; row++) {
-            // 畫面橫排為從左到右 (視覺上的 1~6)，但邏輯上最右側(靠近門)是第1排
             for (let visualCol = 1; visualCol <= 6; visualCol++) {
                 const seat = document.createElement("div");
                 seat.className = "seat";
 
-                // 計算邏輯上的排數：畫面最右側 (visualCol=6) 對應 排1
                 const logicalCol = 7 - visualCol; 
 
                 const header = document.createElement("div");
                 header.className = "seat-header";
 
-                // 座位標籤：排-列 (例如 1-1, 1-2...最左前是 6-1)
                 const label = document.createElement("div");
                 label.className = "seat-label";
                 label.innerText = `${logicalCol}-${row}`;
                 header.appendChild(label);
 
-                // 狀態下拉選單
                 const select = document.createElement("select");
                 select.className = "seat-select";
                 
@@ -492,20 +523,29 @@
         refreshSummaryTableDisplay();
     }
 
-    function saveRecord() {
+    // --- 寫入雲端與本地 ---
+    async function saveRecord() {
+        const btn = document.getElementById("btnSave");
+        btn.innerText = "雲端同步中...";
+        btn.disabled = true;
+
         const week = document.getElementById("weekInput").value;
         const currentClass = document.getElementById("classSelect").value;
         const chkQuiet = document.getElementById("chkQuiet").checked;
         const chkBooks = document.getElementById("chkBooks").checked;
         const isPassed = chkQuiet && chkBooks;
 
-        // 收集所有座位的下拉選單值
+        let inspector = document.getElementById("inspectorSelect").value;
+        if(inspector === "manual") inspector = document.getElementById("manualInspector").value;
+
         const selectElements = document.querySelectorAll('.seat-select');
         const seatData = Array.from(selectElements).map(select => select.value);
 
-        // 存入記憶體
-        if (!records[week]) records[week] = {};
-        records[week][currentClass] = { 
+        const payload = {
+            action: 'save',
+            week: week,
+            inspector: inspector,
+            className: currentClass,
             passed: isPassed,
             chkQuiet: chkQuiet,
             chkBooks: chkBooks,
@@ -517,30 +557,39 @@
             excOther: document.getElementById("excOther").value
         };
 
-        // 更新底部總表
+        // 1. 存入本地記憶體
+        if (!records[week]) records[week] = {};
+        records[week][currentClass] = payload;
         refreshSummaryTableDisplay();
 
-        // 顯示儲存成功提示
-        const toast = document.getElementById('toast');
-        toast.innerText = `已儲存第 ${week} 週 ${currentClass} 班紀錄！`;
-        toast.style.display = 'block';
-        setTimeout(() => toast.style.display = 'none', 2000);
+        // 2. 傳送至雲端 Google Sheets
+        try {
+            await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            showToast(`已成功同步第 ${week} 週 <b>${currentClass}</b> 班紀錄！`);
+        } catch (error) {
+            console.error("儲存失敗", error);
+            showToast("雲端同步失敗，但已暫存於本機。請檢查網路！", "#e74c3c");
+        } finally {
+            btn.innerText = "儲存 / 雲端同步本班紀錄";
+            btn.disabled = false;
+        }
     }
 
     function loadClassRecord() {
         const week = document.getElementById("weekInput").value;
         const currentClass = document.getElementById("classSelect").value;
         
-        // 檢查該週該班是否有歷史紀錄
         if (records[week] && records[week][currentClass]) {
             const data = records[week][currentClass];
             
-            // 復原勾選狀態
             document.getElementById("chkQuiet").checked = data.chkQuiet;
             document.getElementById("chkBooks").checked = data.chkBooks;
             checkCertification();
 
-            // 復原座位表狀態與顏色
             const selectElements = document.querySelectorAll('.seat-select');
             const seatContainers = document.querySelectorAll('.seat');
             
@@ -550,15 +599,26 @@
                 seatContainers[index].style.backgroundColor = optColor;
             });
 
-            // 復原其他特殊狀況數值
-            document.getElementById("excWalk").value = data.excWalk;
-            document.getElementById("excClean").value = data.excClean;
-            document.getElementById("excStand").value = data.excStand;
-            document.getElementById("excNotReady").value = data.excNotReady;
-            document.getElementById("excOther").value = data.excOther;
+            document.getElementById("excWalk").value = data.excWalk || 0;
+            document.getElementById("excClean").value = data.excClean || 0;
+            document.getElementById("excStand").value = data.excStand || 0;
+            document.getElementById("excNotReady").value = data.excNotReady || 0;
+            document.getElementById("excOther").value = data.excOther || "";
+
+            if(data.inspector) {
+                const insSelect = document.getElementById("inspectorSelect");
+                const opts = Array.from(insSelect.options).map(o => o.value);
+                if(opts.includes(data.inspector)) {
+                    insSelect.value = data.inspector;
+                    document.getElementById("manualInspector").style.display = "none";
+                } else {
+                    insSelect.value = "manual";
+                    document.getElementById("manualInspector").style.display = "inline-block";
+                    document.getElementById("manualInspector").value = data.inspector;
+                }
+            }
             
         } else {
-            // 無歷史紀錄則清空表單
             resetForm();
         }
     }
@@ -595,6 +655,14 @@
         document.getElementById("excOther").value = "";
     }
 
+    function showToast(htmlMsg, bgColor = "#2ecc71") {
+        const toast = document.getElementById('toast');
+        toast.innerHTML = htmlMsg;
+        toast.style.background = bgColor;
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2500);
+    }
+
     function exportToExcel() {
         const week = document.getElementById("weekInput").value;
         const weekData = records[week];
@@ -604,21 +672,12 @@
             return;
         }
 
-        // 準備 Excel 欄位標頭
         const exportData = [];
         const headers = [
-            "班級", 
-            "通過認證", 
-            "安靜閱讀", 
-            "閱讀課外讀物", 
-            "走動人數", 
-            "打掃人數", 
-            "站立人數", 
-            "未就緒人數", 
-            "其他狀況"
+            "班級", "巡查紀錄者", "通過認證", "安靜閱讀", "閱讀課外讀物", 
+            "走動人數", "打掃人數", "站立人數", "未就緒人數", "其他狀況"
         ];
         
-        // 加入座位的標頭 (排-列)
         for (let row = 1; row <= 5; row++) {
             for (let visualCol = 1; visualCol <= 6; visualCol++) {
                 const logicalCol = 7 - visualCol; 
@@ -627,13 +686,12 @@
         }
         exportData.push(headers);
 
-        // 將每個班級的資料轉為陣列放入 exportData
-        // 依照班級順序輸出
         classes.forEach(cls => {
             if (weekData[cls]) {
                 const data = weekData[cls];
                 const rowData = [
                     cls,
+                    data.inspector || "",
                     data.passed ? "是" : "否",
                     data.chkQuiet ? "是" : "否",
                     data.chkBooks ? "是" : "否",
@@ -644,7 +702,6 @@
                     data.excOther || ""
                 ];
 
-                // 將座位資料加入列中
                 data.seats.forEach(seatStatus => {
                     rowData.push(seatStatus);
                 });
@@ -653,12 +710,9 @@
             }
         });
 
-        // 建立工作表與活頁簿
         const ws = XLSX.utils.aoa_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, `第${week}週紀錄`);
-
-        // 下載檔案
         const filename = `晨讀巡堂紀錄_第${week}週.xlsx`;
         XLSX.writeFile(wb, filename);
     }
@@ -666,4 +720,3 @@
 
 </body>
 </html>
-`
