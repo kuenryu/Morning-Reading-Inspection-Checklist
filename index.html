@@ -11,6 +11,7 @@
             --secondary: #34495e;
             --accent: #3498db;
             --success: #27ae60;
+            --danger: #e74c3c;
             --bg: #f8f9fa;
             --border: #dee2e6;
         }
@@ -19,9 +20,9 @@
         .container { max-width: 1050px; margin: 0 auto; background: white; padding: 20px 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .header-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--primary); padding-bottom: 10px; margin-bottom: 20px; }
         .header-bar h1 { margin: 0; font-size: 1.6rem; border: none; padding: 0; }
-        .btn-sync { background: #8e44ad; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; }
-        .btn-sync:hover { background: #732d91; }
-        .btn-sync:disabled { background: #bdc3c7; cursor: not-allowed; }
+        .btn-clear { background: var(--danger); color: white; border: none; padding: 8px 14px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; }
+        .btn-clear:hover { background: #c0392b; }
+        .btn-clear:disabled { background: #bdc3c7; cursor: not-allowed; }
         h3 { text-align: center; color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 10px; }
 
         .form-group { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding: 15px; background: #f1f3f5; border-radius: 8px; }
@@ -67,7 +68,6 @@
         .spinner { border: 8px solid #f3f3f3; border-top: 8px solid var(--accent); border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* 手機版排版優化 */
         @media (max-width: 768px) {
             body { padding: 8px; }
             .container { padding: 14px; }
@@ -95,7 +95,7 @@
 <div class="container">
     <div class="header-bar">
         <h1>晨讀巡堂紀錄系統</h1>
-        <button class="btn-sync" id="btnSync" onclick="manualSyncCloud()">🔄 立即同步雲端</button>
+        <button class="btn-clear" id="btnClear" onclick="clearWeekRecords()">🗑️ 清除本週紀錄</button>
     </div>
 
     <div class="form-group">
@@ -171,6 +171,7 @@
 </div>
 
 <script>
+    // 請確認此處為您最新部署的 /exec 網址
     const GAS_URL = "https://script.google.com/macros/s/AKfycbwyE9vKA6BP0E6clmjbYf5EiSmNr6_9VDRGWQsCrF8tQwD2S6Ls8KLsss8iRHEzM_iffg/exec";
 
     const classes = ["701","702","703","704","705","706","801","802","803","804","805","806","901","902","903","904","905","906","907"];
@@ -180,7 +181,6 @@
         { value: "睡覺", label: "睡覺", bg: "#a29bfe" }, { value: "桌上無書發呆", label: "桌上無書發呆", bg: "#ff7675" }
     ];
 
-    // 資料結構：records[week][inspector][dateKey][className]
     let records = {};
 
     window.onload = async () => {
@@ -190,7 +190,6 @@
         await fetchAllDataFromCloud(true);
     };
 
-    // 手機或電腦切回此網頁時，自動在背景同步最新雲端資料
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
             fetchAllDataFromCloud(false);
@@ -224,7 +223,6 @@
             return;
         }
         try {
-            // 加上時間戳記防止手機/電腦瀏覽器讀取舊快取
             const cacheBuster = (GAS_URL.includes("?") ? "&" : "?") + "t=" + Date.now();
             const response = await fetch(GAS_URL + cacheBuster, { cache: "no-store" });
             const data = await response.json();
@@ -242,14 +240,46 @@
         }
     }
 
-    async function manualSyncCloud() {
-        const btn = document.getElementById("btnSync");
-        btn.innerText = "同步中...";
+    async function clearWeekRecords() {
+        const week = document.getElementById("weekInput").value;
+        const inspector = getInspector();
+        const patrolDate = getDateKey();
+
+        if (!confirm(`確定要清除「第 ${week} 週【${inspector} (${patrolDate})】」的所有巡堂紀錄嗎？\n（此動作會同步刪除雲端試算表紀錄，無法復原）`)) {
+            return;
+        }
+
+        const btn = document.getElementById("btnClear");
+        btn.innerText = "清除中...";
         btn.disabled = true;
-        await fetchAllDataFromCloud(false);
-        showToast("已與雲端同步最新紀錄！");
-        btn.innerText = "🔄 立即同步雲端";
-        btn.disabled = false;
+
+        // 1. 清除本機記憶體
+        if (records[week] && records[week][inspector] && records[week][inspector][patrolDate]) {
+            delete records[week][inspector][patrolDate];
+        }
+        resetForm();
+        refreshSummaryTableDisplay();
+
+        // 2. 同步清除雲端 Google Sheets
+        try {
+            await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'clearWeek',
+                    week: week,
+                    inspector: inspector,
+                    manualDate: patrolDate
+                })
+            });
+            showToast(`已清除第 ${week} 週【${inspector} (${patrolDate})】紀錄！`);
+        } catch (error) {
+            console.error("清除失敗", error);
+            showToast("雲端清除失敗，請檢查網路連線！", "#e74c3c");
+        } finally {
+            btn.innerText = "🗑️ 清除本週紀錄";
+            btn.disabled = false;
+        }
     }
 
     function toggleManualInspector() {
@@ -340,7 +370,7 @@
         records[week][inspector][patrolDate][currentClass] = payload;
         refreshSummaryTableDisplay();
 
-        if (GAS_URL === "https://script.google.com/macros/s/AKfycbxjc6yDVfBG8eG2GKFndd5KI76UoPS0pmwmJ0D4jjKEyh-eNk56Gue2orNs4jTTvBvmfA/exec") {
+        if (GAS_URL === "https://script.google.com/macros/s/AKfycbw_UrIfUx7SFQNjObsl0DMcG7nyA8gj74MVrzt6hT_IwnXMByTqGJ8o7evjjfIukhxpZA/exec") {
             showToast("請先設定 GAS_URL！已暫存於本機。", "#f1c40f");
             btn.innerText = "儲存 / 雲端同步本班紀錄"; btn.disabled = false;
             return;
