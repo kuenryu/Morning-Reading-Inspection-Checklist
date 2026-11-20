@@ -473,6 +473,66 @@
         const exportData = [];
         const headers = [
             "班級", "巡查紀錄者", "巡查日期", "通過認證", "安靜閱讀", "閱讀課外讀物",
+            "走動人數", "打掃人數", "站立人數", "未就緒人數", "其他狀況", "異常座位紀錄"
+        ];
+        exportData.push(headers);
+
+        classes.forEach(cls => {
+            if (dayData[cls]) {
+                const data = dayData[cls];
+
+                // 只整理非「正常」的異常座位
+                const abnormalSeats = [];
+                if (Array.isArray(data.seats)) {
+                    data.seats.forEach((seatStatus, i) => {
+                        if (seatStatus && seatStatus !== "正常") {
+                            const row = Math.floor(i / 6) + 1;
+                            const visualCol = (i % 6) + 1;
+                            const logicalCol = 7 - visualCol;
+                            abnormalSeats.push(`${logicalCol}-${row}: ${seatStatus}`);
+                        }
+                    });
+                }
+                const abnormalText = abnormalSeats.length > 0 ? abnormalSeats.join(", ") : "全部正常";
+
+                const rowData = [
+                    cls, inspector, data.manualDate || dateKey, data.passed ? "是" : "否",
+                    data.chkQuiet ? "是" : "否", data.chkBooks ? "是" : "否",
+                    data.excWalk, data.excClean, data.excStand, data.excNotReady, data.excOther || "",
+                    abnormalText
+                ];
+                exportData.push(rowData);
+            }
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(exportData);
+
+        // 設定欄寬，讓異常座位欄位更好閱讀
+        ws['!cols'] = [
+            { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+            { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 18 }, { wch: 35 }
+        ];
+
+        // 通過認證的班級整列標示淡黃色
+        const yellowFill = { fill: { fgColor: { rgb: "FFF59D" } } };
+        for (let r = 1; r < exportData.length; r++) {
+            if (exportData[r][3] === "是") {
+                for (let c = 0; c < headers.length; c++) {
+                    const cellRef = XLSX.utils.encode_cell({ r: r, c: c });
+                    if (!ws[cellRef]) ws[cellRef] = { t: "s", v: "" };
+                    ws[cellRef].s = yellowFill;
+                }
+            }
+        }
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, `第${week}週_${dateKey}`);
+        XLSX.writeFile(wb, `晨讀巡堂_${inspector}_${dateKey}_第${week}週.xlsx`);
+    }
+        const dayData = records[week][inspector][dateKey];
+        const exportData = [];
+        const headers = [
+            "班級", "巡查紀錄者", "巡查日期", "通過認證", "安靜閱讀", "閱讀課外讀物",
             "走動人數", "打掃人數", "站立人數", "未就緒人數", "其他狀況"
         ];
 
