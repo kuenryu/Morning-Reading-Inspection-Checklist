@@ -571,10 +571,8 @@
         }
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, `第${week}週_${dateKey}`);
-        XLSX.writeFile(wb, `晨讀巡堂_${inspector}_${dateKey}_第${week}週.xlsx`);
-    }
+       XLSX.writeFile(wb, `晨讀巡堂_${inspector}_${dateKey}_第${week}週.xlsx`);
+  }
 </script>
-
 </body>
 </html>
